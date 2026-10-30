@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>تطبيق حضور وغياب الطلاب</title>
+  <style>
+    :root {
+      --primary: #2c3e50;
+      --secondary: #3498db;
+      --success: #2ecc71;
+      --danger: #e74c3c;
+      --warning: #f1c40f;
+      --bg: #f4f7f6;
+      --card-bg: #ffffff;
+      --text: #333333;
+    }
+
+    * {
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      padding-bottom: 80px;
+    }
+
+    header {
+      background-color: var(--primary);
+      color: white;
+      padding: 15px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .connection-status {
+      padding: 6px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .online { background-color: #d4edda; color: #155724; }
+    .offline { background-color: #f8d7da; color: #721c24; }
+
+    .container {
+      padding: 15px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--card-bg);
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+
+    select, input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    .student-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .student-item:last-child {
+      border-bottom: none;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 5px;
+    }
+
+    .btn-status {
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      background: #f9f9f9;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 13px;
+    }
+
+    .btn-status.present.active { background: var(--success); color: white; border-color: var(--success); }
+    .btn-status.absent.active { background: var(--danger); color: white; border-color: var(--danger); }
+    .btn-status.late.active { background: var(--warning); color: #333; border-color: var(--warning); }
+
+    .action-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: white;
+      padding: 10px 15px;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .btn-main {
+      flex: 1;
+      max-width: 280px;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: bold;
+      color: white;
+      cursor: pointer;
+    }
+
+    .btn-save { background-color: var(--secondary); }
+    .btn-sync { background-color: var(--success); }
+
+    .badge {
+      background: var(--danger);
+      color: white;
+      border-radius: 50%;
+      padding: 2px 7px;
+      font-size: 12px;
+      margin-right: 5px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h2>نظام حضور الطلاب</h2>
+  </header>
+
+  <div id="statusIndicator" class="connection-status online">
+    جاري التحقق من الاتصال...
+  </div>
+
+  <div class="container">
+    <!-- بيانات المعلم والصف -->
+    <div class="card">
+      <label for="teacherName">اسم المعلم:</label>
+      <input type="text" id="teacherName" placeholder="أدخل اسمك هنا" onchange="saveTeacherName()">
+
+      <label for="gradeSelect">اختر الصف:</label>
+      <select id="gradeSelect" onchange="filterStudents()">
+        <option value="">-- اختر الصف --</option>
+      </select>
+
+      <label for="attendanceDate">التاريخ:</label>
+      <input type="date" id="attendanceDate">
+    </div>
+
+    <!-- قائمة الطلاب -->
+    <div class="card">
+      <h3>قائمة الطلاب</h3>
+      <div id="studentsList" style="margin-top: 10px;">
+        <p style="color: #777; text-align: center;">اختر الصف لتقديم الحضور</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- شريط الإجراءات السفلي -->
+  <div class="action-bar">
+    <button class="btn-main btn-save" onclick="saveLocally()">حفظ في الهاتف 💾</button>
+    <button class="btn-main btn-sync" onclick="syncData()">
+      مزامنة <span id="unsyncedCount" class="badge" style="display:none;">0</span> 🔄
+    </button>
+  </div>
+
+  <script>
+    // ⚠️ ضع رابط Google Apps Script الخاص بك هنا
+    const API_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID_HERE/exec";
+
+    let allStudents = [];
+    let currentAttendance = {}; // { studentId: 'حاضر' | 'غائب' | 'متاخر' }
+
+    // عند تحميل الصفحة
+    window.onload = function() {
+      document.getElementById('attendanceDate').valueAsDate = new Date();
+      loadTeacherName();
+      checkOnlineStatus();
+      loadLocalStudents();
+      updateUnsyncedBadge();
+
+      window.addEventListener('online', checkOnlineStatus);
+      window.addEventListener('offline', checkOnlineStatus);
+    };
+
+    function checkOnlineStatus() {
+      const statusDiv = document.getElementById('statusIndicator');
+      if (navigator.onLine) {
+        statusDiv.textContent = "متصل بالإنترنت 🌐";
+        statusDiv.className = "connection-status online";
+        // محاولة جلب الطلاب من Google Sheet إذا وجد اتصال
+        fetchStudentsFromCloud();
+      } else {
+        statusDiv.textContent = "غير متصل بالإنترنت (يعمل أوفلاين) 📴";
+        statusDiv.className = "connection-status offline";
+      }
+    }
+
+    function saveTeacherName() {
+      const name = document.getElementById('teacherName').value;
+      localStorage.setItem('teacherName', name);
+    }
+
+    function loadTeacherName() {
+      const name = localStorage.getItem('teacherName');
+      if (name) document.getElementById('teacherName').value = name;
+    }
+
+    // جلب قائمة الطلاب من Google Sheets
+    function fetchStudentsFromCloud() {
+      if (!navigator.onLine || API_URL.includes("YOUR_SCRIPT_ID_HERE")) return;
+
+      fetch(API_URL + "?action=getStudents")
+        .then(res => res.json())
+        .then(data => {
+          allStudents = data;
+          localStorage.setItem('cachedStudents', JSON.stringify(data));
+          populateGradesDropdown();
+        })
+        .catch(err => console.log("تعذر جلب البيانات من السحابة، تم استخدام الذاكرة المحلية:", err));
+    }
+
+    // تحميل الطلاب المخزنين محلياً في حال عدم وجود إنترنت
+    function loadLocalStudents() {
+      const cached = localStorage.getItem('cachedStudents');
+      if (cached) {
+        allStudents = JSON.parse(cached);
+        populateGradesDropdown();
+      }
+    }
+
+    function populateGradesDropdown() {
+      const gradeSelect = document.getElementById('gradeSelect');
+      const currentSelection = gradeSelect.value;
+      
+      // استخراج الصفوف الفريدة
+      const grades = [...new Set(allStudents.map(s => s.grade))];
+      
+      gradeSelect.innerHTML = '<option value="">-- اختر الصف --</option>';
+      grades.forEach(g => {
+        if(g) {
+          const opt = document.createElement('option');
+          opt.value = g;
+          opt.textContent = g;
+          gradeSelect.appendChild(opt);
+        }
+      });
+
+      if (currentSelection) gradeSelect.value = currentSelection;
+    }
+
+    function filterStudents() {
+      const selectedGrade = document.getElementById('gradeSelect').value;
+      const listDiv = document.getElementById('studentsList');
+      listDiv.innerHTML = '';
+
+      if (!selectedGrade) {
+        listDiv.innerHTML = '<p style="color: #777; text-align: center;">اختر الصف لتقديم الحضور</p>';
+        return;
+      }
+
+      const filtered = allStudents.filter(s => s.grade === selectedGrade);
+      currentAttendance = {};
+
+      filtered.forEach(student => {
+        // افتراضياً: حاضر
+        currentAttendance[student.id] = 'حاضر';
+
+        const item = document.createElement('div');
+        item.className = 'student-item';
+        item.innerHTML = `
+          <span>${student.name}</span>
+          <div class="btn-group" id="btn-group-${student.id}">
+            <button class="btn-status present active" onclick="setStatus('${student.id}', 'حاضر')">حاضر</button>
+            <button class="btn-status absent" onclick="setStatus('${student.id}', 'غائب')">غائب</button>
+            <button class="btn-status late" onclick="setStatus('${student.id}', 'متاخر')">متأخر</button>
+          </div>
+        `;
+        listDiv.appendChild(item);
+      });
+    }
+
+    function setStatus(studentId, status) {
+      currentAttendance[studentId] = status;
+      
+      const group = document.getElementById(`btn-group-${studentId}`);
+      const buttons = group.querySelectorAll('.btn-status');
+      
+      buttons.forEach(btn => btn.classList.remove('active'));
+      
+      if (status === 'حاضر') group.querySelector('.present').classList.add('active');
+      if (status === 'غائب') group.querySelector('.absent').classList.add('active');
+      if (status === 'متاخر') group.querySelector('.late').classList.add('active');
+    }
+
+    // حفظ السجلات محلياً في الجوال
+    function saveLocally() {
+      const teacherName = document.getElementById('teacherName').value;
+      const grade = document.getElementById('gradeSelect').value;
+      const date = document.getElementById('attendanceDate').value;
+
+      if (!teacherName || !grade || !date) {
+        alert('يرجى أكمال جميع البيانات (اسم المعلم، الصف، والتاريخ)');
+        return;
+      }
+
+      const selectedStudents = allStudents.filter(s => s.grade === grade);
+      const recordsToSave = selectedStudents.map(s => ({
+        date: date,
+        studentName: s.name,
+        grade: grade,
+        status: currentAttendance[s.id] || 'حاضر',
+        teacherName: teacherName
+      }));
+
+      // جلب السجلات غير المزمنة السابقة
+      let unsynced = JSON.parse(localStorage.getItem('unsyncedAttendance') || '[]');
+      unsynced = unsynced.concat(recordsToSave);
+      
+      localStorage.setItem('unsyncedAttendance', JSON.stringify(unsynced));
+      
+      alert('تم حفظ البيانات محلياً بنجاح! 📱');
+      updateUnsyncedBadge();
+
+      // محاولة المزامنة التلقائية إذا توفر الإنترنت
+      if (navigator.onLine) {
+        syncData();
+      }
+    }
+
+    // مزامنة البيانات مع Google Sheets
+    function syncData() {
+      if (!navigator.onLine) {
+        alert('لا يوجد اتصال بالإنترنت حالياً. سيتم الاحتفاظ بالبيانات في الجوال لحين توفر الاتصال.');
+        return;
+      }
+
+      const unsynced = JSON.parse(localStorage.getItem('unsyncedAttendance') || '[]');
+      
+      if (unsynced.length === 0) {
+        alert('جميع البيانات مزامنة بالفعل مع Google Sheets 👍');
+        return;
+      }
+
+      fetch(API_URL, {
+        method: 'POST',
+        mode: 'no-cors', // يتطلبه Google Apps Script عند الإرسال من النطاقات الخارجية
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(unsynced)
+      })
+      .then(() => {
+        // تفريغ البيانات المحفوظة محلياً بعد إرسالها
+        localStorage.removeItem('unsyncedAttendance');
+        updateUnsyncedBadge();
+        alert('تمت مزامنة البيانات مع Google Sheets بنجاح! ☁️');
+      })
+      .catch(err => {
+        alert('حدث خطأ أثناء المزامنة. يرجى المحاولة لاحقاً.');
+        console.error(err);
+      });
+    }
+
+    function updateUnsyncedBadge() {
+      const unsynced = JSON.parse(localStorage.getItem('unsyncedAttendance') || '[]');
+      const badge = document.getElementById('unsyncedCount');
+      if (unsynced.length > 0) {
+        badge.textContent = unsynced.length;
+        badge.style.display = 'inline';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>
