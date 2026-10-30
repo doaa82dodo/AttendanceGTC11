@@ -191,6 +191,14 @@
   </div>
 
   <script>
+    // تسجيل الـ Service Worker لتمكين العمل بدون إنترنت
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('Service Worker registered! Scope:', reg.scope))
+      .catch(err => console.log('Service Worker registration failed:', err));
+  });
+}
     // ⚠️ ضع رابط Google Apps Script الخاص بك هنا
     const API_URL = "https://script.google.com/macros/s/AKfycbzZCDnsMDwe2csGftSmzm0qGjFZc2JqOfPsxMuQewuFudM9cTGuXNKGoCFvaOaAJM70/exec";
 
